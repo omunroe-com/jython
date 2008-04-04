@@ -1,0 +1,36 @@
+# mapping file; specifies how expose & derive filenames should map to classes
+# for instance, a line like:
+#
+#   str.expose:org.python.core.PyString
+#
+# will map str.expose to org.python.core.PyString.  Many classes will have 2
+# lines; one for their expose, and one for their derived class.
+
+array.derived:org.python.core.PyArrayDerived
+bool.derived:org.python.core.PyBooleanDerived
+classmethod.derived:org.python.core.PyClassMethodDerived
+complex.derived:org.python.core.PyComplexDerived
+dict.derived:org.python.core.PyDictionaryDerived
+file.derived:org.python.core.PyFileDerived
+float.derived:org.python.core.PyFloatDerived
+#function.expose:org.python.core.PyFunction
+#gderived.py doesn't handle derived out of org.python.core
+#immutableset.derived:org.python.modules.sets.PyImmutableSetDerived
+int.derived:org.python.core.PyIntegerDerived
+list.derived:org.python.core.PyListDerived
+long.derived:org.python.core.PyLongDerived
+module.derived:org.python.core.PyModuleDerived
+object.derived:org.python.core.PyObjectDerived
+property.derived:org.python.core.PyPropertyDerived
+#random.derived:org.python.modules.random.PyRandomDerived
+#gderived.py doesn't handle derived out of org.python.core
+#set.derived:org.python.modules.sets.PySetDerived
+slice.derived:org.python.core.PySliceDerived
+str.derived:org.python.core.PyStringDerived
+super.derived:org.python.core.PySuperDerived
+tuple.derived:org.python.core.PyTupleDerived
+type.derived:org.python.core.PyTypeDerived
+unicode.derived:org.python.core.PyUnicodeDerived
+zipimporter.derived:org.python.modules.zipimport.zipimporterDerived
+deque.derived:org.python.modules.collections.PyDequeDerived
+defaultdict.derived:org.python.modules.collections.PyDefaultDictDerived

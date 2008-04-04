@@ -1,0 +1,718 @@
+<!-- Copyright 2000 Dj Walker-Morgan -->
+<project name="jython" default="developer-build" basedir=".">
+    <target name="usage" description="prints usage hints">
+        <echo>
+Use case 1: developer build (in your local jython copy)
+-------------------------------------------------------
+  - call target 'developer-build' (which is the default for this build.xml)
+This build will create directories /build and /dist below basedir.
+
+
+Use case 2: full build for a release (using svn checkout)
+---------------------------------------------------------
+  - make sure you have access to the jython subversion repository (https://jython.svn.sourceforge.net/svnroot/jython/trunk)
+  - override svn.main.dir in ant.properties (if necessary)
+  - call target 'full-build'
+This build will create a working directory named full_build/${svn.main.dir} at the same
+level as your local directories jython, sandbox and installer.
+It will contain a big jython_installer-${jython.version}.jar file suitable for installation.
+
+Please be aware:
+To build older releases, it may be necessary to use an older build.xml, too (with the corresponding tag).
+For example it is not possible to build Release_2_2alpha1 with this version of build.xml.
+
+
+Use case 3: build only the parser (grammar)
+-------------------------------------------
+  - override javaccHome in ant.properties (if necessary)
+  - call target 'parser'
+or:
+  - set javaccHome, either on the command line, or inside parser/build.xml
+  - call parser/build.xml (default target)
+This build will only create files inside org/python/parser.
+
+
+Note on targets
+---------------
+The following targets are designed for direct invocation:
+  - usage
+  - developer-build
+  - full-build
+  - clean (uses developer-build settings if called directly)
+  - parser (uses developer-build settings if called directly)
+Following an ant convention, the callable targets have a description attribute.
+All other targets may give unpredicted results if called directly.
+
+
+Where ant.properties are searched
+---------------------------------
+  1. in user.home
+  2. in the same directory as this build.xml file
+The first setting of a property wins, further settings are ignored.
+
+
+Actions for a release
+---------------------
+See http://wiki.python.org/jython/JythonDeveloperGuide/HowToReleaseJython
+
+        	
+An example ant.properties file:
+-------------------------------
+
+# - define the home for javacc (only used for parser grammar)
+javaccHome=${basedir}/../externals/javacc-4.0
+
+# - ht2html tool for the doc target (only needed for full-build)
+ht2html.dir=${basedir}/../externals/ht2html-2.0
+
+# - define the home of the corresponding CPython version
+python.home=c:/Programme/Python/Python23
+
+# - zxJDBC
+oracle.jar=C:/workspace/HEAD/for_development/bisdevsrv28/jboss/server/infra/lib/ojdbc14.jar
+#informix.jar=${basedir}/../externals/external-jars/ifxjdbc.jar
+
+# - option for javac (build.compiler=modern is a global option to use standard jdk 1.3/1.4/1.5)
+#build.compiler=modern
+#jdk.target.version=1.5
+#debug=false
+#optimize=off
+#deprecation=off
+
+# - the svn main directory to build from; only needed for full-build
+# This e.g. could be one of:
+#   trunk
+#   branches/Release_2_2maint
+#   tags/Release_2_2rc3
+# meaning any directory just above the two directories:
+#   /installer
+#   /jython
+# svn.main.dir defaults to trunk
+#svn.main.dir=trunk
+
+# - the revision; only needed for a snapshot full-build
+# To create a snapshot build: uncomment and indicate the correct revision (it has to be a number)
+# For 'normal' builds, this defaults to the latest revision on svn.main.dir (HEAD)
+#svn.revision=3444
+
+# - the directory containing libsvnjavahl-1.dll (on windows) and svnjavahl.jar; only needed for full-build
+# how to get these (for windows):
+#   - goto http://subversion.tigris.org/servlets/ProjectDocumentList
+#   - open the Releases folder
+#   - click on the Windows folder
+#   - download svn-win32-1.4.6_javahl.zip (or newer)
+#   - unzip the .dll and .jar into javahl.dir
+javahl.dir=C:/Programme/Subversion/javahl
+
+# - the directory containing the svnant related .jar files; only needed for full-build
+# the following .jar files (probably) are needed:
+#   - commons-lang-2.0.jar
+#   - jakarta-regexp-1.3.jar
+#   - svnant.jar
+#   - svnClientAdapter.jar
+#   - svnjavahl.jar
+# how to get these:
+#   - goto http://subclipse.tigris.org/servlets/ProjectDocumentList
+#   - click on the the svnant folder
+#   - download svnant-1.0.0.zip (or newer)
+#   - unzip the jar files from the /lib folder to svnant.jar.dir
+svnant.jar.dir=${basedir}/../externals/svnant-jars
+        </echo>
+    </target>
+
+    <target name="jarless" depends="compile, copy-lib"/>
+
+    <target name="developer-build" depends="prepare-output, jar, copy-lib" description="a local build for developers" />
+
+    <target name="full-build" depends="full-check, install" description="a full build with svn checkout" />
+
+    <target name="init">
+        <property file="${user.home}/ant.properties" />
+        <property file="${basedir}/ant.properties" />
+
+        <property name="build.compiler" value="modern" />
+        <property name="jdk.target.version" value="1.5" />
+        <property name="jdk.source.version" value="1.5" />
+        <property name="deprecation" value="off" />
+        <property name="debug" value="true" />
+        <property name="nowarn" value="false" />
+
+        <!-- properties work.dir and jython.base.dir are also defined in full-preinit -->
+        <property name="work.dir" value="${basedir}" />
+        <property name="jython.base.dir" value="${work.dir}" />
+
+        <property name="source.dir" value="${jython.base.dir}/src" />
+        <property name="test.source.dir" value="${jython.base.dir}/tests/java" />
+        <property name="templates.dir" value="${source.dir}/templates" />
+        <property name="python.lib" value="${jython.base.dir}/CPythonLib" />
+        <property name="bugtests.dir" value="${jython.base.dir}/bugtests" />
+        <property name="templates.lazy" value="true" />
+        <property name="extlibs.dir" value="${jython.base.dir}/extlibs" />
+        <property name="output.dir" value="${work.dir}/build" />
+        <property name="compile.dir" value="${output.dir}/classes" />
+        <property name="jarjar.dir" value="${output.dir}/jarjar" />
+        <property name="exposed.dir" value="${output.dir}/exposed" />
+        <property name="gensrc.dir" value="${output.dir}/gensrc" />
+        <property name="dist.dir" value="${work.dir}/dist" />
+        <property name="apidoc.dir" value="${dist.dir}/Doc/javadoc" />
+        <property name="parser.dir" value="${source.dir}/org/python/parser" />
+
+        <!-- classpaths -->
+        <path id="main.classpath">
+            <pathelement path="${jarjar.dir}" />
+            <pathelement path="${extlibs.dir}/libreadline-java-0.8.jar" />
+            <pathelement path="${extlibs.dir}/jline-0.9.94.jar" />
+            <pathelement path="${extlibs.dir}/servlet-api-2.5.jar" />
+            <pathelement path="${informix.jar}" />
+            <pathelement path="${oracle.jar}" />
+            <pathelement path="${extlibs.dir}/mysql-connector-java-5.1.6.jar" />
+            <pathelement path="${extlibs.dir}/postgresql-8.3-603.jdbc4.jar" />
+            <pathelement path="${extlibs.dir}/antlr-2.7.7.jar" />
+            <pathelement path="${extlibs.dir}/antlr-3.0.1.jar" />
+            <pathelement path="${extlibs.dir}/stringtemplate-3.1b1.jar" />
+        </path>
+
+        <available property="informix.present" classname="com.informix.jdbc.IfxDriver" classpath="${informix.jar}" />
+        <available property="oracle.present" classname="oracle.jdbc.driver.OracleDriver" classpath="${oracle.jar}" />
+
+        <path id="test.classpath">
+            <path refid="main.classpath"/>
+            <pathelement path="${extlibs.dir}/asm-commons-3.1.jar" />
+            <pathelement path="${extlibs.dir}/junit-3.8.2.jar" />
+            <pathelement path="${exposed.dir}" />
+            <pathelement path="${compile.dir}" />
+        </path>
+        <uptodate property="jarjar.notneeded" targetfile="${output.dir}/jarjar.jar">
+            <srcfiles dir="extlibs" includes="*" />
+        </uptodate>
+    </target>
+
+    <target name="full-preinit">
+        <property file="${user.home}/ant.properties" />
+        <property file="${basedir}/ant.properties" />
+
+        <!-- use this property to distinguish a full-build from a developer-build -->
+        <property name="full-build" value="true" />
+
+        <!-- predefined main directory for checkout -->
+        <property name="svn.main.dir" value="trunk" />
+
+        <!-- properties work.dir and jython.base.dir are also definied in init, 
+             so full-preinit must run first to work -->
+        <property name="work.dir" value="${basedir}/../full_build/${svn.main.dir}" />
+        <property name="svn.checkout.dir" value="${work.dir}/checkout" />
+        <property name="jython.base.dir" value="${svn.checkout.dir}/jython" />
+        <property name="has.repositories.connection" value="true" />
+        <property name="python.exe" value="${python.home}/python" />
+        <condition property="do.checkout" value="true">
+            <istrue value="${has.repositories.connection}" />
+        </condition>
+        <condition property="do.snapshot.build">
+            <isset property="svn.revision" />
+        </condition>
+        <condition property="jython.version" value="${svn.revision}">
+            <isset property="svn.revision" />
+        </condition>
+        <property name="jython.version" value="2.3a0" />
+        <!-- if not set so far, default svn.revision to HEAD, since we always want
+    	     the latest revision on the specified subversion main directory -->
+        <property name="svn.revision" value="HEAD"/>
+    	
+        <!-- classpath for svn ant task -->
+        <path id="svn.classpath">
+            <pathelement path="${java.class.path}" />
+            <fileset dir="${svnant.jar.dir}">
+              <include name="*.jar"/>
+            </fileset>
+        </path>
+    	<!-- taskdef for svn ant task -->
+    	<taskdef name="svn" classname="org.tigris.subversion.svnant.SvnTask" classpathref="svn.classpath" />
+    </target>
+    <target name="full-check" depends="full-preinit, init, dump-env">
+        <!-- Require all of the optional jars for a full build -->
+        <fail unless="informix.present" message="informix jar not present" />
+        <fail unless="oracle.present" message="oracle jar not present" />
+    </target>
+    <target name="dump-env" depends="init">
+        <echo>.</echo>
+        <echo>Build environment for ${ant.project.name}</echo>
+        <echo>(Note: if ${propertyname} is displayed, then the property is not set)</echo>
+        <echo>--- optional libraries ---</echo>
+        <echo>oracle             = '${oracle.present}'</echo>
+        <echo>informix           = '${informix.present}'</echo>
+        <echo>--- properties ---</echo>
+        <echo>work.dir           = '${work.dir}'</echo>
+        <echo>jython.base.dir    = '${jython.base.dir}'</echo>
+        <echo>source.dir         = '${source.dir}'</echo>
+        <echo>parser.dir         = '${parser.dir}'</echo>
+        <echo>output.dir         = '${output.dir}'</echo>
+        <echo>compile.dir        = '${compile.dir}'</echo>
+        <echo>exposed.dir        = '${exposed.dir}'</echo>
+        <echo>dist.dir           = '${dist.dir}'</echo>
+        <echo>apidoc.dir         = '${apidoc.dir}'</echo>
+        <echo>templates.dir      = '${templates.dir}'</echo>
+        <echo>templates.lazy     = '${templates.lazy}'</echo>
+        <echo>python.lib         = '${python.lib}'</echo>
+        <echo>javaccHome         = '${javaccHome}'</echo>
+        <echo>ht2html.dir        = '${ht2html.dir}'</echo>
+        <echo>build.compiler     = '${build.compiler}'</echo>
+        <echo>jdk.target.version = '${jdk.target.version}'</echo>
+        <echo>jdk.source.version = '${jdk.source.version}'</echo>
+        <echo>deprecation        = '${deprecation}'</echo>
+        <echo>debug              = '${debug}'</echo>
+        <echo>nowarn             = '${nowarn}'</echo>
+        <echo>--- properties (used for full-build only ) ---</echo>
+        <echo>python.exe         = '${python.exe}'</echo>
+        <echo>svn.main.dir       = '${svn.main.dir}'</echo>
+        <echo>svn.revision       = '${svn.revision}'</echo>
+        <echo>svn.checkout.dir   = '${svn.checkout.dir}'</echo>
+        <echo>javahl.dir         = '${javahl.dir}'</echo>
+        <echo>svnant.jar.dir     = '${svnant.jar.dir}'</echo>
+        <echo>do.snapshot.build  = '${do.snapshot.build}'</echo>
+        <echo>do.checkout        = '${do.checkout}'</echo>
+    </target>
+
+    <!-- delete what's necessary. should correspond to the directories created in prepare  -->
+    <!-- if called directly, we use settings as in developer-build -->
+    <!-- (at the moment all properties will already be set if we do a full build) -->
+    <target name="clean" depends="init, clean-checkout-dir" description="clean up build working directories">
+        <!-- do not hard delete ${work.dir}, since it could be ${basedir} -->
+        <!-- deletes all files and subdirectories of ${output.dir}, without ${output.dir} itself. -->
+        <delete includeemptydirs="true" failonerror="false">
+            <fileset dir="${output.dir}" includes="**/*" />
+        </delete>
+        <!-- deletes all files and subdirectories of ${dist.dir}, without ${dist.dir} itself. -->
+        <delete includeemptydirs="true" failonerror="false">
+            <fileset dir="${dist.dir}" includes="**/*" />
+        </delete>
+        <!-- delete the installation .jar file from ${work.dir}, but no other files -->
+        <delete failonerror="false">
+            <fileset dir="${work.dir}" includes="jython*.jar" />
+        </delete>
+    </target>
+
+    <!-- clean svn.checkout.dir if we really checkout -->
+    <target name="clean-checkout-dir" if="do.checkout">
+        <delete includeemptydirs="true" failonerror="false">
+            <fileset dir="${svn.checkout.dir}" includes="**/*" defaultexcludes="no" />
+        </delete>
+    </target>
+
+    <!-- create output directories -->
+    <target name ="prepare-output" depends="init">
+        <mkdir dir="${compile.dir}" />
+        <mkdir dir="${jarjar.dir}" />
+        <mkdir dir="${gensrc.dir}/org/python/antlr" />
+        <mkdir dir="${exposed.dir}" />
+        <mkdir dir="${dist.dir}" />
+    </target>
+
+    <!-- create necessary directories -->
+    <target name="prepare" depends="prepare-full, prepare-checkout, prepare-output"/>
+
+    <!-- create directories needed only in full-build -->
+    <target name="prepare-full" depends="clean" if="full-build">
+        <mkdir dir="${work.dir}" />
+        <mkdir dir="${dist.dir}/Doc" />
+        <mkdir dir="${apidoc.dir}" />
+    </target>
+
+    <!-- create checkout directory if necessary -->
+    <target name="prepare-checkout" if="do.checkout">
+        <mkdir dir="${svn.checkout.dir}" />
+    </target>
+
+    <target name="checkout" depends="prepare" if="do.checkout">
+        <svn javahl="${javahl.dir}" >
+        	<checkout url="https://jython.svn.sourceforge.net/svnroot/jython/${svn.main.dir}/jython" revision="${svn.revision}" destPath="${svn.checkout.dir}/jython" />
+        	<checkout url="https://jython.svn.sourceforge.net/svnroot/jython/${svn.main.dir}/installer" revision="${svn.revision}" destPath="${svn.checkout.dir}/installer" />
+        </svn> 
+
+        <!-- checkout cpython license from the correct python maintenance branch -->
+        <svn javahl="${javahl.dir}" >
+               <checkout url="http://svn.python.org/projects/python/branches/release23-maint/" destPath="${svn.checkout.dir}/python" recurse="false" />
+        </svn> 
+    </target>
+
+	
+	<!-- change the version string, if so defined: used for snapshot builds -->
+	<!-- the following replacements have to be updated if the version strings
+	     in PySystemState.java and README.txt change -->
+	<target name="version" depends="checkout" if="do.snapshot.build" >
+		<property name="replace.value.version" value='version = "2.2b${svn.revision}"' />
+		<replace file="${source.dir}/org/python/core/PySystemState.java" token='version = "2.2b2"' value="${replace.value.version}" />
+		<replace file="${source.dir}/org/python/core/PySystemState.java" token="PY_RELEASE_LEVEL = 0x0A" value="PY_RELEASE_LEVEL = 0xAA" />
+		<property name="replace.value.serial" value="PY_RELEASE_SERIAL = ${svn.revision}" />
+		<replace file="${source.dir}/org/python/core/PySystemState.java" token="PY_RELEASE_SERIAL = 2" value="${replace.value.serial}" />
+
+    	<!-- change README.txt -->
+		<replace file="${jython.base.dir}/README.txt" token='2.2b2' value='2.2b${svn.revision}' />
+		<replace file="${jython.base.dir}/README.txt">
+			<replacetoken>=======================</replacetoken>
+			<replacevalue>--------------------------
+
+This is a snapshot build.
+It reflects the current development status.
+				
+The readme text for the next release will be like:
+
+			</replacevalue>
+		</replace>
+	</target>
+
+    <!-- separate build.xml for parser grammar -->
+    <!-- we use settings as in developer-build - at the moment all properties will already be set if we do a full build -->
+    <target name="parser" depends="init, prepare" if="javaccHome" description="the grammar build">
+        <echo>processing ${parser.dir}/build.xml</echo>
+        <ant dir="${parser.dir}" />
+    </target>
+
+    <target name="template-init" depends="prepare">
+        <javac srcdir="${source.dir}/"
+                destdir="${compile.dir}"
+                target="${jdk.target.version}"
+                source="${jdk.source.version}"
+                debug="${debug}"
+                optimize="${optimize}"
+                deprecation="${deprecation}"
+                nowarn="${nowarn}">
+            <include name="org/python/util/TemplateAntTask.java" />
+        </javac>
+    </target>
+
+    <target name="template" depends="checkout, template-init">
+        <taskdef name="gentempl" classname="org.python.util.TemplateAntTask"
+            classpath="${compile.dir}" />
+        <gentempl srcdir="${templates.dir}" verbose="true"
+		  lazy="${templates.lazy}"/>
+    </target>
+
+    <target name="antlr_gen" depends="init,prepare-output">
+        <java classname="org.antlr.Tool">
+            <arg value="-fo"/>
+            <arg path="build/gensrc/org/python/antlr"/>
+            <arg value="-lib"/>
+            <arg path="build/gensrc/org/python/antlr"/>
+            <arg file="grammar/Python.g"/>
+            <arg file="grammar/PythonWalker.g"/>
+            <classpath refid="main.classpath"/>
+        </java>
+        
+        <!-- copy the .tokens to /grammar, for usage in ANTLRWorks -->
+        <!--
+        <copy todir="grammar" preservelastmodified="true">
+            <fileset dir="build/gensrc/org/python/antlr">
+                <include name="Python.tokens" />
+            </fileset>
+        </copy>
+        -->
+
+    </target>
+ 
+    <target name="compile" depends="init,jarjar">
+        <javac destdir="${compile.dir}"
+               target="${jdk.target.version}"
+               source="${jdk.source.version}"
+               debug="${debug}"
+               deprecation="${deprecation}"
+               nowarn="${nowarn}">
+            <src path="${source.dir}"/>
+            <src path="${gensrc.dir}"/>
+
+            <exclude name="org/python/parser/python.java" />
+            <exclude name="**/handler/InformixDataHandler.java" unless="informix.present" />
+            <exclude name="**/handler/OracleDataHandler.java" unless="oracle.present" />
+            <classpath refid="main.classpath" />
+        </javac>
+
+        <javac srcdir="${jython.base.dir}/Lib"
+               includes="jxxload_help/**"
+               destdir="${compile.dir}"
+               target="${jdk.target.version}"
+               source="${jdk.source.version}"
+               debug="${debug}"
+               optimize="${optimize}"
+               deprecation="${deprecation}"
+               nowarn="${nowarn}"/>
+
+        <!-- java files used by tests -->
+        <javac srcdir="${test.source.dir}"
+               destdir="${compile.dir}"
+               target="${jdk.target.version}"
+               source="${jdk.source.version}"
+               debug="${debug}"
+               optimize="${optimize}"
+               deprecation="${deprecation}"
+               nowarn="${nowarn}"> 
+            <classpath refid="test.classpath" />
+        </javac>
+
+        <copy file="${source.dir}/org/python/modules/ucnhash.dat"
+              todir="${compile.dir}/org/python/modules"
+              preservelastmodified="true" />
+
+        <copy todir="${compile.dir}/com" preservelastmodified="true">
+            <fileset dir="${source.dir}/com">
+                <include name="**/*.properties" />
+            </fileset>
+        </copy>
+    </target>
+
+    <target name="expose" depends="init">
+        <taskdef name="expose" classname="org.python.expose.generate.ExposeTask">
+            <classpath>
+                <path refid="main.classpath" />
+                <pathelement path="${compile.dir}" />
+            </classpath>
+        </taskdef>
+        <expose srcdir="${compile.dir}"
+            destdir="${exposed.dir}" 
+            includesfile="${jython.base.dir}/CoreExposed.includes"/>
+    </target>
+    <target name="jarjar" depends="init" unless="jarjar.notneeded">
+        <taskdef name="jarjar" classname="com.tonicsystems.jarjar.JarJarTask" classpath="extlibs/jarjar-0.7.jar"/>
+        <jarjar destfile="${output.dir}/jarjar.jar">
+            <zipfileset src="extlibs/asm-3.1.jar"/>
+            <zipfileset src="extlibs/asm-commons-3.1.jar"/>
+            <zipfileset src="extlibs/asm-util-3.1.jar"/>
+            <rule pattern="org.objectweb.asm.**" result="org.python.objectweb.asm.@1"/>
+        </jarjar>
+        <unjar src="${output.dir}/jarjar.jar" dest="${jarjar.dir}">
+            <patternset>
+                <exclude name="META-INF/**"/>
+            </patternset>
+        </unjar>
+    </target>
+
+    <target name="jar" depends="compile,expose,jarjar">
+       <jar destfile="${dist.dir}/jython.jar">
+          <fileset dir="${compile.dir}"/>   
+          <fileset dir="${exposed.dir}"/>
+          <manifest>
+              <attribute name="Main-Class" value="org.python.util.jython" />
+              <attribute name="Built-By" value="${user.name}" />
+              <!-- info section. ATTN: no blanks, no '.' in the names -->
+              <section name="Build-Info">
+                  <attribute name="version" value="${jython.version}" />
+                  <attribute name="svn-build" value="${do.checkout}" />
+                  <attribute name="oracle" value="${oracle.present}" />
+                  <attribute name="informix" value="${informix.present}" />
+                  <attribute name="build-compiler" value="${build.compiler}" />
+                  <attribute name="jdk-target-version" value="${jdk.target.version}" />
+                  <attribute name="debug" value="${debug}" />
+                  <attribute name="optimize" value="${optimize}" />
+              </section>
+          </manifest>
+        </jar>
+    </target>
+
+    <!-- build the .html files using the ht2html tool -->
+    <target name="doc" depends="compile" if="full-build">
+        <fail unless="ht2html.dir" message="ht2html.dir is not set" />
+        <copy todir="${dist.dir}/Doc" preservelastmodified="true">
+            <fileset dir="Doc" includes="*.ht, **/*.gif" />
+        </copy>
+        <!-- Create .html files in Doc -->
+        <apply executable="${python.exe}" dir="Doc">
+            <env key="PYTHONPATH" path="${jython.base.dir}/Misc/htgen" />
+            <arg line="${ht2html.dir}/ht2html.py" />
+            <arg line="-s JyLocalGenerator" />
+            <fileset dir="${dist.dir}/Doc">
+                <include name="*.ht" />
+            </fileset>
+        </apply>
+        <delete>
+            <fileset dir="${dist.dir}/Doc" includes="*.ht" />
+        </delete>
+    </target>
+
+    <target name="javadoc" depends="compile">
+        <path id="javadoc.classpath">
+            <pathelement path="${java.class.path}" />
+            <path refid="main.classpath" />
+        </path> 
+        <javadoc sourcepath="${source.dir}" 
+                 destdir="${apidoc.dir}"
+                 source="${jdk.source.version}"
+                 public="true"
+                 breakiterator="yes"
+                 packagenames="org.python.core, org.python.util, com.ziclix.python.sql"
+                 windowtitle="Jython API documentation"
+                 bottom="&lt;a href='http://www.jython.org' target='_top'>Jython homepage&lt;/a>"
+        >
+            <classpath refid="javadoc.classpath" />
+        </javadoc>
+    </target>
+
+    <target name="copy-full" depends="copy-lib" if="full-build">
+        <echo>copy misc files from ${jython.base.dir}</echo>
+        <copy todir="${dist.dir}" preservelastmodified="true">
+            <fileset dir="${jython.base.dir}"
+                     includes="ACKNOWLEDGMENTS, build.xml, build.Lib.include.properties, NEWS, LICENSE.txt, README.txt, registry"
+            />
+        </copy>
+
+        <echo>copy CPython LICENSE from ${svn.checkout.dir}/python</echo>
+        <copy file="${svn.checkout.dir}/python/LICENSE" tofile="${dist.dir}/LICENSE_CPython.txt" preservelastmodified="true" />
+
+        <!-- sources: todir has to correspond with installer/**/JarInstaller.java -->
+        <echo>copy sources from ${jython.base.dir}</echo>
+        <copy todir="${dist.dir}/src/java" preservelastmodified="true">
+            <fileset dir="${jython.base.dir}">
+              <include name="src/**/*.java" />
+              <include name="src/com/**/*.properties" />
+              <include name="Lib/jxxload_help/*.java" />
+              <include name="tests/java/**/*.java" />
+              <include name="src/org/**/ucnhash.dat" />
+              <include name="src/org/python/parser/build.xml" />
+              <exclude name="src/org/python/parser/python.java" />
+            </fileset>
+        </copy>
+
+        <echo>copy the demo files from ${jython.base.dir}/Demo</echo>
+        <copy todir="${dist.dir}/Demo" preservelastmodified="true">
+            <fileset dir="${jython.base.dir}/Demo">
+              <include name="**/*.java" />
+              <include name="**/*.html" />
+              <include name="**/*.py" />
+              <include name="**/*.txt" />
+              <include name="**/*.xml**" />
+              <include name="**/jreload/example.jar" />
+              <include name="**/jreload/_xample/Version.class" />
+              <exclude name="**/jpywork/**" />
+            </fileset>
+        </copy>
+    </target>
+
+    <target name="copy-lib" depends="init">
+        <copy todir="${dist.dir}" preservelastmodified="true">
+            <fileset dir="${jython.base.dir}" includes="Tools/**/*.py" />
+        </copy>
+
+        <copy todir="${dist.dir}/Lib">
+            <fileset dir="${jython.base.dir}/Lib">
+                <exclude name="**/*.class"/>
+            </fileset>
+            <fileset dir="${python.lib}" excludes="**/*.pyc, **/*.pyo" includesfile="${jython.base.dir}/CPythonLib.includes">
+                <!-- The include file gets all of CPythonLib's test directory, but we only want the ones from Jython's Lib.   -->
+                <present present="srconly" targetdir="${jython.base.dir}/Lib"/>
+            </fileset>
+        </copy>
+    </target>
+
+    <!-- wrap the build into the installer -->
+    <target name="install" depends="version, doc, jar, javadoc, copy-full">
+        <property name="install.src.dir" value="${jython.base.dir}/../installer/src/java" />
+        <echo>compiling installer from ${install.src.dir}</echo>
+        <javac srcdir="${install.src.dir}"
+               includes="org/**"
+               destdir="${compile.dir}"
+               target="${jdk.target.version}"
+               source="${jdk.source.version}"
+               debug="${debug}"
+               optimize="${optimize}"
+               deprecation="${deprecation}"
+               nowarn="${nowarn}"
+        />
+        <echo>copy installer classes to ${dist.dir}</echo>
+        <copy todir="${dist.dir}" preservelastmodified="true">
+            <fileset dir="${compile.dir}">
+            	<include name="org/python/util/install/**/*.class" />
+            	<include name="org/apache/commons/cli/*.class" />
+            </fileset>
+        </copy>
+        <copy file="${install.src.dir}/org/apache/LICENSE.txt" tofile="${dist.dir}/LICENSE_Apache.txt" preservelastmodified="true" />
+        <echo>copy installer icon to ${dist.dir}</echo>
+        <copy todir="${dist.dir}" preservelastmodified="true">
+            <!-- check no /bin directory -->
+            <fileset dir="${install.src.dir}" includes="**/*.png" excludes="bin/**" />
+        </copy>
+        <echo>building installer .jar file</echo>
+        <jar destfile="${work.dir}/jython_installer-${jython.version}.jar" basedir="${dist.dir}" update="true">
+            <manifest>
+                <attribute name="Main-Class" value="org.python.util.install.Installation" />
+                <attribute name="Built-By" value="${user.name}" />
+                <!-- section for the install program -->
+                <section name="Jython">
+                    <attribute name="version" value="${jython.version}" />
+                    <attribute name="exclude-dirs" value="org;META-INF" />
+                </section>
+                <!-- info section. ATTN: no blanks, no '.' in the names -->
+                <section name="Build-Info">
+                    <attribute name="svn-build" value="${do.checkout}" />
+                    <attribute name="oracle" value="${oracle.present}" />
+                    <attribute name="informix" value="${informix.present}" />
+                    <attribute name="build-compiler" value="${build.compiler}" />
+                    <attribute name="jdk-target-version" value="${jdk.target.version}" />
+                    <attribute name="debug" value="${debug}" />
+                    <attribute name="optimize" value="${optimize}" />
+                </section>
+            </manifest>
+        </jar>
+    </target>
+
+    <target name="test" depends="javatest,regrtest"/>
+    <target name="javatest" depends="compile,expose">
+        <junit fork="true" printsummary="true">
+            <classpath refid="test.classpath"/>
+            <batchtest todir="${dist.dir}/testreports">
+                <fileset dir="${test.source.dir}" includes="**/*Test*.java">
+                    <exclude name="javatests/**/*" />
+                    <exclude name="**/InterpTestCase.java" />
+                </fileset>
+            </batchtest>
+        </junit>
+    </target>
+    <target name="regrtest" depends="compile,expose,copy-lib">
+        <java classname="org.python.util.jython" fork="true">
+            <jvmarg value="-Dpython.home=${dist.dir}"/>
+            <arg value="${dist.dir}/Lib/test/regrtest.py"/>
+            <!-- Only run the tests that are expected to work on Jython -->
+            <arg value="--expected"/>
+            <classpath refid="test.classpath" />
+        </java>
+    </target>
+
+    <!-- run bugtests, create a config if necessary -->
+    <target name="bugtest" depends="create-bugtest-config">
+         <java classname="org.python.util.jython" fork="true" dir="${bugtests.dir}">
+            <classpath>
+                <pathelement location="${dist.dir}/jython.jar"/>
+            </classpath>
+            <jvmarg value="-Dpython.home=${dist.dir}"/>
+            <arg value="driver.py"/>
+         	<!-- uncomment if you want to run only one test: -->
+         	<!--
+         	<arg value="386"/>
+         	-->
+        </java>
+    </target>
+
+    <!-- create support_config.py in the bugtset directory only if it doesn't already exist -->
+    <target name="create-bugtest-config" depends="init, check-bugtest-config" unless="have_bugtest_config">
+        <!-- doesn't seem to be a direct way to get at the path to javac,
+        java.home points to the jre folder. The following assumes a standard
+        jdk layout. Alternative is to try something like:
+
+            <property environment="env"/>
+            <property name="jdk.home" value="${env.JAVA_HOME}" />
+  
+        or set jdk.home explicitly
+        -->
+        <echo>creating ${bugtests.dir}/support_config.py</echo>
+        <property name="jdk.home" value="${java.home}/.." />
+        <echo file="${bugtests.dir}/support_config.py">
+# this configuration was auto-generated by ant build script,
+# safe to edit by hand (won't be overwritten)
+java_home="${jdk.home}"
+jython_home="${dist.dir}" 
+classpath="${dist.dir}/jython.jar${path.separator}classes"
+        </echo>
+    </target>
+
+    <!-- set property have_bugtest_config if support_config.py already exists in the bugtest directory -->
+    <target name="check-bugtest-config">
+        <available property="have_bugtest_config" file="${bugtests.dir}/support_config.py"/>
+    </target>
+
+</project>
