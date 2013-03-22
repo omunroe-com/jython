@@ -128,7 +128,6 @@ class TestStringIO(TestGenericStringIO):
 class TestcStringIO(TestGenericStringIO):
     MODULE = cStringIO
 
-    @unittest.skipIf(test_support.is_jython, "FIXME #1862: not working in Jython")
     def test_array_support(self):
         # Issue #1730114: cStringIO should accept array objects
         a = array.array('B', [0,1,2])
@@ -154,7 +153,8 @@ class TestcStringIO(TestGenericStringIO):
         self.assertEqual(s, 'abcde')
         self.assertEqual(type(s), str)
 
-        if not test_support.is_jython: #FIXME #1862: not working in Jython
+        # This cStringIO/StringIO difference seems CPython specific to me...
+        if not test_support.is_jython:
             self.assertRaises(UnicodeEncodeError, self.MODULE.StringIO, u'\xf4')
 
 

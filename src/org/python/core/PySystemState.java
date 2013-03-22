@@ -81,6 +81,8 @@ public class PySystemState extends PyObject implements ClassDictInit {
     //     for tests that would need to pass but today would not.
     public final static int maxsize = Integer.MAX_VALUE;
 
+    public final static PyString float_repr_style = Py.newString("short");
+
     public static boolean py3kwarning = false;
 
     public final static Class flags = Options.class;
@@ -91,7 +93,7 @@ public class PySystemState extends PyObject implements ClassDictInit {
      */
 
     public static final PyObject copyright = Py.newString(
-        "Copyright (c) 2000-2009 Jython Developers.\n" +
+        "Copyright (c) 2000-2013 Jython Developers.\n" +
         "All rights reserved.\n\n" +
 
         "Copyright (c) 2000 BeOpen.com.\n" +
@@ -1462,7 +1464,6 @@ public class PySystemState extends PyObject implements ClassDictInit {
             }
         }
     }
-
 }
 
 
